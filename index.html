@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Poser</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='7' r='5' fill='%23222'/><path d='M16 13v9M9 15l7 3 7-3M16 22l-5 8M16 22l5 8' stroke='%23222' stroke-width='3' fill='none' stroke-linecap='round'/></svg>" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <div class="brand">3D&nbsp;Poser</div>
+        <div class="group" role="group" aria-label="Gizmo">
+          <button data-action="mode-rotate" class="toggle on" title="Rotate joints (R)">Rotate</button>
+          <button data-action="mode-move" class="toggle" title="Drag hands, feet and hips with IK (G)">Move&nbsp;(IK)</button>
+        </div>
+        <div class="group" role="group" aria-label="History">
+          <button data-action="undo" title="Undo (Ctrl+Z)">Undo</button>
+          <button data-action="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+        </div>
+        <div class="group" role="group" aria-label="Pose">
+          <button data-action="mirror-l" title="Copy the left limbs onto the right">L&rarr;R</button>
+          <button data-action="mirror-r" title="Copy the right limbs onto the left">R&rarr;L</button>
+          <button data-action="flip" title="Mirror the whole pose">Flip</button>
+          <button data-action="reset" title="Back to a relaxed standing pose">Reset</button>
+          <button data-action="floor" title="Put the lowest point on the floor">Floor</button>
+        </div>
+        <div class="group" role="group" aria-label="Camera">
+          <button data-action="camera-match" title="Fit the camera to the reference image">Match&nbsp;camera</button>
+          <button data-action="camera-free" class="toggle on" title="Orbit freely">Free&nbsp;camera</button>
+          <button data-action="frame" title="Frame the figure (F)">Frame</button>
+        </div>
+        <div class="spacer"></div>
+        <div class="group" role="group" aria-label="File">
+          <button data-action="save">Save</button>
+          <button data-action="load">Load</button>
+          <button data-action="export" class="primary">Export&nbsp;PNG</button>
+        </div>
+      </header>
+
+      <aside id="left">
+        <section class="card">
+          <h2>Reference</h2>
+          <label id="dropzone" class="dropzone">
+            <input id="file" type="file" accept="image/*" hidden />
+            <canvas id="refCanvas" hidden></canvas>
+            <span id="dropText">Drop an image here, paste, or click to choose</span>
+          </label>
+          <div class="row">
+            <label class="check"><input id="overlayToggle" type="checkbox" checked /> Overlay in viewport</label>
+            <input id="overlayOpacity" type="range" min="0" max="1" step="0.05" value="0.35" aria-label="Overlay opacity" />
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Pose from image</h2>
+          <ol class="steps">
+            <li><button id="btnDetect" disabled>Detect pose <small>MediaPipe, in browser</small></button></li>
+            <li><button id="btnClaude" class="primary" disabled>Reconstruct 3D with Claude</button></li>
+            <li><button id="btnRefine" disabled>Refine: compare render &amp; fix</button></li>
+          </ol>
+          <textarea id="note" rows="2" placeholder="Optional note for Claude, e.g. &quot;left hand is behind the head, strong low-angle shot&quot;"></textarea>
+          <div class="checks">
+            <label class="check"><input id="optBody" type="checkbox" checked /> Apply suggested body type</label>
+            <label class="check"><input id="optFov" type="checkbox" checked /> Search lens FOV when matching</label>
+            <label class="check" title="Keeps bone lengths and places each joint exactly on its image position; the 3D estimate only decides toward/away from the camera."><input id="optLift" type="checkbox" checked /> Snap limbs to the image (exact foreshortening)</label>
+          </div>
+          <div id="status" class="status" aria-live="polite"></div>
+        </section>
+
+        <section class="card" id="analysisCard" hidden>
+          <h2>Analysis</h2>
+          <p id="anDesc"></p>
+          <p id="anFore" class="muted"></p>
+          <dl id="anCam" class="kv"></dl>
+        </section>
+
+        <details class="card">
+          <summary>Claude API key</summary>
+          <p class="muted small" id="keyInfo">Checking server&hellip;</p>
+          <input id="apiKey" type="password" placeholder="sk-ant-… (only needed if the server has no key)" autocomplete="off" />
+        </details>
+      </aside>
+
+      <main id="view">
+        <div id="viewport"></div>
+        <div id="hint" class="hint">Click a body part to select it &middot; drag the ring gizmo to rotate &middot; Move (IK) drags hands, feet &amp; hips</div>
+      </main>
+
+      <aside id="right"></aside>
+    </div>
+    <input id="poseFile" type="file" accept="application/json" hidden />
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
