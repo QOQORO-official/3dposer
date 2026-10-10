@@ -16,16 +16,12 @@ function gradientMap(steps: number[]): THREE.DataTexture {
 export interface StyleMaterials {
   skin: THREE.MeshToonMaterial;
   clay: THREE.MeshStandardMaterial;
-  highlight: THREE.MeshToonMaterial;
-  guide: THREE.LineBasicMaterial;
 }
 
 export function createMaterials(): StyleMaterials {
-  const skin = new THREE.MeshToonMaterial({ color: 0xf2f2f2, gradientMap: gradientMap([70, 165, 255]) });
-  const clay = new THREE.MeshStandardMaterial({ color: 0xd9d4cf, roughness: 0.75, metalness: 0 });
-  const highlight = new THREE.MeshToonMaterial({ color: 0xffd36b, gradientMap: gradientMap([120, 200, 255]) });
-  const guide = new THREE.LineBasicMaterial({ color: 0x1a1a1a });
-  return { skin, clay, highlight, guide };
+  const skin = new THREE.MeshToonMaterial({ color: 0xf2f2f2, gradientMap: gradientMap([118, 185, 255]), vertexColors: true });
+  const clay = new THREE.MeshStandardMaterial({ color: 0xd9d4cf, roughness: 0.7, metalness: 0, vertexColors: true });
+  return { skin, clay };
 }
 
 /** Screen-space screentone: maps the toon tones to dot patterns and keeps lines and colored guides. */
@@ -56,8 +52,9 @@ export function createHalftoneMaterial(): THREE.ShaderMaterial {
         float l = dot(srgb, vec3(0.299, 0.587, 0.114));
         float sat = max(srgb.r, max(srgb.g, srgb.b)) - min(srgb.r, min(srgb.g, srgb.b));
         // Keep ink lines and colored overlays as they are.
-        if (enabled < 0.5 || l < 0.22 || sat > 0.07) {
-          gl_FragColor = vec4(c.rgb, 1.0);
+        if (enabled < 0.5 || l < 0.36 || sat > 0.07) {
+          // Ink stays solid black so anti-aliased line edges don't break into dots.
+          gl_FragColor = vec4(l < 0.36 && sat <= 0.07 && enabled > 0.5 ? vec3(smoothstep(0.0, 0.36, l) * 0.15) : c.rgb, 1.0);
           #include <colorspace_fragment>
           return;
         }

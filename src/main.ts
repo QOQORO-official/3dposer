@@ -2,9 +2,10 @@ import './style.css';
 import * as THREE from 'three';
 import type { AnalyzeRequest, AnalyzeResponse, DetectorLandmark, KeypointName, PoseAnalysis } from '../shared/schema';
 import { Figure, type PoseSnapshot } from './figure/rig';
-import { buildAnatomy } from './figure/anatomy';
-import { defaultParams, SIDES, type FigureParams, type HandParams, type Side } from './figure/params';
-import { figureKeypoints, solveFromKeypoints } from './figure/solver';
+import { loadHumanAsset } from './figure/human';
+import { GuideLines, createGuideMaterial } from './figure/lines';
+import { applyPreset, defaultParams, SIDES, type FigureParams, type HandParams, type Side } from './figure/params';
+import { figureKeypoints, solveFromKeypoints, solveLimbIK } from './figure/solver';
 import { liftLimbsToImage } from './figure/lift';
 import { analysisFromDetector, keypointsToWorld, worldToKeypoints } from './pose/keypoints';
 import { detectPose } from './pose/detect';
@@ -15,7 +16,14 @@ import { buildGui } from './ui/gui';
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 
 // ---------------------------------------------------------------- state
-const figure = new Figure(defaultParams());
+let asset;
+try {
+  asset = await loadHumanAsset();
+} catch (err) {
+  document.querySelector('#status')!.textContent = (err as Error).message;
+  throw err;
+}
+const figure = new Figure(asset, defaultParams());
 const settings = { guides: true, outline: 0.0055, halftone: 4.5, dolly: true };
 let refImage: HTMLImageElement | null = null;
 let refAspect = 1;
@@ -43,9 +51,14 @@ overlayImg.alt = '';
 overlayImg.hidden = true;
 viewport.frame.appendChild(overlayImg);
 
+const guides = new GuideLines(figure, createGuideMaterial());
+viewport.beforeRender = () => guides.update();
+
 let rebuildQueued = false;
+/** Re-evaluates body shape and proportions (keeps the pose). */
 function rebuild(): void {
-  buildAnatomy(figure, { skin: viewport.skinMaterial(), guide: viewport.materials.guide }, settings.guides);
+  figure.updateShape();
+  guides.build();
   viewport.refreshMaterials();
 }
 function queueShapeRebuild(): void {
@@ -54,7 +67,6 @@ function queueShapeRebuild(): void {
   requestAnimationFrame(() => {
     rebuildQueued = false;
     const wasOnFloor = Math.abs(lowestPoint()) < 0.01;
-    figure.updateProportions();
     rebuild();
     if (wasOnFloor) snapToFloor();
     saveLocal();
@@ -63,7 +75,7 @@ function queueShapeRebuild(): void {
 
 function lowestPoint(): number {
   figure.root.updateMatrixWorld(true);
-  return new THREE.Box3().setFromObject(figure.root, true).min.y;
+  return new THREE.Box3().setFromObject(figure.mesh, true).min.y;
 }
 
 function snapToFloor(): void {
@@ -85,7 +97,9 @@ const gui = buildGui($('#right'), {
   onStyleChange: () => {
     viewport.setLineWeight(settings.outline);
     viewport.halftoneCell = settings.halftone;
-    rebuild();
+    guides.object.visible = settings.guides;
+    guides.update();
+    viewport.refreshMaterials();
   },
 });
 
@@ -139,10 +153,15 @@ function serialize(): SaveFile {
 function deserialize(data: SaveFile): void {
   if (data?.app !== '3dposer') throw new Error('Not a 3D Poser file.');
   const defaults = defaultParams();
-  Object.assign(figure.params.proportions, defaults.proportions, data.params.proportions);
-  Object.assign(figure.params.muscles, defaults.muscles, data.params.muscles);
-  for (const s of SIDES) Object.assign(figure.params.hands[s], defaults.hands[s], data.params.hands?.[s]);
-  figure.updateProportions();
+  const pick = <T extends object>(base: T, src: Partial<T> | undefined): T => {
+    const out = { ...base };
+    for (const k of Object.keys(base) as (keyof T)[]) if (typeof src?.[k] === 'number') out[k] = src[k] as T[keyof T];
+    return out;
+  };
+  Object.assign(figure.params.proportions, pick(defaults.proportions, data.params.proportions));
+  Object.assign(figure.params.body, pick(defaults.body, data.params.body));
+  Object.assign(figure.params.muscles, pick(defaults.muscles, data.params.muscles));
+  for (const s of SIDES) Object.assign(figure.params.hands[s], pick(defaults.hands[s], data.params.hands?.[s]));
   rebuild();
   figure.restore(data.pose);
   analysis = data.analysis ?? null;
@@ -318,23 +337,14 @@ function encodeReference(maxSide = 1568): { media_type: 'image/jpeg'; data: stri
 
 // ---------------------------------------------------------------- applying an analysis
 function applyBodySuggestion(body: PoseAnalysis['body']): void {
-  const p = figure.params.proportions;
-  const m = figure.params.muscles;
-  const mus = THREE.MathUtils.clamp(0.35 + 1.3 * body.muscularity, 0.2, 2);
-  for (const k of ['neck', 'traps', 'deltoids', 'chest', 'lats', 'abs', 'obliques', 'biceps', 'triceps', 'forearms', 'glutes', 'quads', 'hamstrings', 'calves'] as const) {
-    m[k] = mus;
-  }
-  m.bodyFat = THREE.MathUtils.clamp(body.body_fat, 0, 1);
-  const female = body.sex === 'female';
-  m.breasts = female ? 0.9 : 0;
-  if (female) m.glutes = Math.max(m.glutes, 1.1);
-  p.height = female ? 0.94 : 1;
-  p.shoulderWidth = female ? 0.88 : 1;
-  p.chestWidth = female ? 0.9 : 1;
-  p.waistWidth = (female ? 0.86 : 1) * (1 + 0.3 * Math.max(0, body.body_fat - 0.4));
-  p.hipWidth = female ? 1.12 : 1;
-  p.headSize = THREE.MathUtils.clamp(7.6 / Math.max(4, body.heads_tall), 0.8, 1.6);
-  figure.updateProportions();
+  const b = figure.params.body;
+  const clamp01 = (v: number) => THREE.MathUtils.clamp(v, 0, 1);
+  b.gender = body.sex === 'female' ? 0 : body.sex === 'male' ? 1 : 0.5;
+  b.muscle = clamp01(0.3 + 0.7 * body.muscularity);
+  b.weight = clamp01(0.15 + 0.85 * body.body_fat);
+  if (body.sex === 'female') b.breastSize = Math.max(b.breastSize, 0.5);
+  figure.params.proportions.height = body.sex === 'female' ? 0.95 : 1;
+  figure.params.proportions.headSize = THREE.MathUtils.clamp(7.4 / Math.max(4, body.heads_tall), 0.8, 1.6);
   rebuild();
 }
 
@@ -611,4 +621,4 @@ pushHistory();
 updateButtons();
 
 // Expose for debugging from the console.
-Object.assign(window, { poser: { figure, viewport, THREE, applyAnalysis, loadImage, runDetect, figureKeypoints, worldToKeypoints } });
+Object.assign(window, { poser: { figure, viewport, THREE, applyAnalysis, loadImage, runDetect, figureKeypoints, worldToKeypoints, applyPreset, solveLimbIK } });

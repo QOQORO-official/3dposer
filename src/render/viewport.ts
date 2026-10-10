@@ -136,7 +136,10 @@ export class Viewport {
     this.renderer.setAnimationLoop(() => this.render());
   }
 
-  /** Material used for the anatomy shapes in the current style. */
+  /** Called every frame before rendering (e.g. to re-skin construction lines). */
+  beforeRender: (() => void) | null = null;
+
+  /** Material used for the body in the current style. */
   skinMaterial(): THREE.Material {
     return this.style === 'clay' ? this.materials.clay : this.materials.skin;
   }
@@ -150,19 +153,21 @@ export class Viewport {
   }
 
   setLineWeight(thickness: number): void {
-    for (const m of [this.materials.skin, this.materials.highlight]) {
-      m.userData.outlineParameters = { thickness, visible: thickness > 0 };
-    }
+    this.materials.skin.userData.outlineParameters = { thickness, visible: thickness > 0 };
   }
 
+  /** Applies the style's material and tints the selected joint's region. */
   refreshMaterials(): void {
-    const skin = this.skinMaterial();
-    this.figure.root.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh || !mesh.userData.joint) return;
-      const sel = this.highlightSelection && this.selected !== null && mesh.userData.joint === this.selected;
-      mesh.material = sel ? this.materials.highlight : skin;
-    });
+    const fig = this.figure;
+    fig.mesh.material = this.skinMaterial();
+    const color = fig.mesh.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const sel = this.highlightSelection && this.selected ? fig.order.findIndex((j) => j.name === this.selected) : -1;
+    const hl = new THREE.Color(0xffc94d);
+    for (let i = 0; i < fig.dominant.length; i++) {
+      if (fig.dominant[i] === sel) color.setXYZ(i, hl.r, hl.g, hl.b);
+      else color.setXYZ(i, 1, 1, 1);
+    }
+    color.needsUpdate = true;
   }
 
   setGizmoMode(mode: GizmoMode): void {
@@ -197,7 +202,7 @@ export class Viewport {
 
   /** Points the orbit camera at the figure from the front (or keeps the current direction). */
   frameFigure(keepDirection = true): void {
-    const box = new THREE.Box3().setFromObject(this.figure.root);
+    const box = new THREE.Box3().setFromObject(this.figure.mesh, true);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(size.y, size.x, size.z) * 0.62;
@@ -343,13 +348,27 @@ export class Viewport {
           return;
         }
       }
-      const meshes: THREE.Object3D[] = [];
-      this.figure.root.traverse((o) => {
-        if ((o as THREE.Mesh).isMesh && o.userData.joint) meshes.push(o);
-      });
-      const hits = ray.intersectObjects(meshes, false);
-      this.select(hits.length ? (hits[0].object.userData.joint as string) : null);
+      this.select(this.pickJoint(ray));
     });
+  }
+
+  /** Joint whose region of the skinned mesh is under the ray. */
+  private pickJoint(ray: THREE.Raycaster): string | null {
+    const mesh = this.figure.mesh;
+    mesh.computeBoundingSphere();
+    const hit = ray.intersectObject(mesh, false)[0];
+    if (!hit?.face) return null;
+    const v = new THREE.Vector3();
+    let best = hit.face.a;
+    let bestD = Infinity;
+    for (const i of [hit.face.a, hit.face.b, hit.face.c]) {
+      const d = this.figure.vertexWorld(i, v).distanceToSquared(hit.point);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return this.figure.order[this.figure.dominant[best]].name;
   }
 
   private syncEffectors(): void {
@@ -363,6 +382,7 @@ export class Viewport {
   render(clean = false): void {
     if (!this.cameraLocked) this.orbit.update();
     this.syncEffectors();
+    this.beforeRender?.();
     const gizmoHelper = this.gizmo.getHelper();
     const gizmoWasVisible = gizmoHelper.visible;
     if (clean) gizmoHelper.visible = false;

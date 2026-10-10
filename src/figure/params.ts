@@ -1,16 +1,12 @@
 export type Side = 'l' | 'r';
 export const SIDES: Side[] = ['l', 'r'];
 
-/** Length / width multipliers. 1 = the base 1.78 m athletic adult. */
+/** Length multipliers applied by stretching bones. 1 = the model's natural proportions. */
 export interface Proportions {
   height: number;
   headSize: number;
   neckLength: number;
   torsoLength: number;
-  shoulderWidth: number;
-  chestWidth: number;
-  waistWidth: number;
-  hipWidth: number;
   upperArm_l: number;
   upperArm_r: number;
   forearm_l: number;
@@ -25,25 +21,40 @@ export interface Proportions {
   foot_r: number;
 }
 
-/** Muscle volume multipliers (0 = flat, 1 = athletic, 2 = huge) plus body-shape controls. */
+/** Whole-body shape, driven by MakeHuman's macro targets. */
+export interface BodyShape {
+  /** 0 = female, 1 = male. */
+  gender: number;
+  /** 0 = minimal, 0.5 = average, 1 = maximal muscle. */
+  muscle: number;
+  /** 0 = thin, 0.5 = average, 1 = heavy. */
+  weight: number;
+  /** 0 = regular, 1 = idealized ("heroic") proportions. */
+  idealProportions: number;
+  /** Surface detail sharpening: muscle separations, collarbones, ribcage (0 = off). */
+  definition: number;
+  /** 0 = small, 0.5 = average, 1 = large (female only). */
+  breastSize: number;
+  /** -1..1 */
+  shoulders: number;
+  chestWidth: number;
+  hips: number;
+}
+
+/** Per-region muscle/volume offsets, -1..1 (0 = as the body shape gives it). */
 export interface Muscles {
   neck: number;
-  traps: number;
   deltoids: number;
   chest: number;
   lats: number;
+  vShape: number;
   abs: number;
-  obliques: number;
-  biceps: number;
-  triceps: number;
+  belly: number;
+  upperArms: number;
   forearms: number;
   glutes: number;
-  quads: number;
-  hamstrings: number;
+  thighs: number;
   calves: number;
-  /** 0 = shredded, 1 = soft/heavy. Thickens the core volumes and softens muscle separation. */
-  bodyFat: number;
-  breasts: number;
 }
 
 export interface HandParams {
@@ -54,6 +65,7 @@ export interface HandParams {
 
 export interface FigureParams {
   proportions: Proportions;
+  body: BodyShape;
   muscles: Muscles;
   hands: Record<Side, HandParams>;
 }
@@ -63,10 +75,6 @@ export const DEFAULT_PROPORTIONS: Proportions = {
   headSize: 1,
   neckLength: 1,
   torsoLength: 1,
-  shoulderWidth: 1,
-  chestWidth: 1,
-  waistWidth: 1,
-  hipWidth: 1,
   upperArm_l: 1,
   upperArm_r: 1,
   forearm_l: 1,
@@ -81,84 +89,81 @@ export const DEFAULT_PROPORTIONS: Proportions = {
   foot_r: 1,
 };
 
+export const DEFAULT_BODY: BodyShape = {
+  gender: 1,
+  muscle: 0.85,
+  weight: 0.35,
+  idealProportions: 0.8,
+  definition: 0.6,
+  breastSize: 0.5,
+  shoulders: 0,
+  chestWidth: 0,
+  hips: 0,
+};
+
 export const DEFAULT_MUSCLES: Muscles = {
-  neck: 1,
-  traps: 1,
-  deltoids: 1,
-  chest: 1,
-  lats: 1,
-  abs: 1,
-  obliques: 1,
-  biceps: 1,
-  triceps: 1,
-  forearms: 1,
-  glutes: 1,
-  quads: 1,
-  hamstrings: 1,
-  calves: 1,
-  bodyFat: 0.25,
-  breasts: 0,
+  neck: 0,
+  deltoids: 0,
+  chest: 0,
+  lats: 0,
+  vShape: 0,
+  abs: 0,
+  belly: 0,
+  upperArms: 0,
+  forearms: 0,
+  glutes: 0,
+  thighs: 0,
+  calves: 0,
 };
 
 export function defaultParams(): FigureParams {
   return {
     proportions: { ...DEFAULT_PROPORTIONS },
+    body: { ...DEFAULT_BODY },
     muscles: { ...DEFAULT_MUSCLES },
     hands: {
-      l: { curl: 0.25, thumbCurl: 0.2, spread: 0.15 },
-      r: { curl: 0.25, thumbCurl: 0.2, spread: 0.15 },
+      l: { curl: 0.1, thumbCurl: 0.1, spread: 0.1 },
+      r: { curl: 0.1, thumbCurl: 0.1, spread: 0.1 },
     },
   };
 }
 
-type Preset = { proportions?: Partial<Proportions>; muscles?: Partial<Muscles> };
-
-const allMuscles = (v: number): Partial<Muscles> => ({
-  neck: v,
-  traps: v,
-  deltoids: v,
-  chest: v,
-  lats: v,
-  abs: v,
-  obliques: v,
-  biceps: v,
-  triceps: v,
-  forearms: v,
-  glutes: v,
-  quads: v,
-  hamstrings: v,
-  calves: v,
-});
+type Preset = { proportions?: Partial<Proportions>; body?: Partial<BodyShape>; muscles?: Partial<Muscles> };
 
 export const PRESETS: Record<string, Preset> = {
   'Athletic male': {},
   'Heroic (comic)': {
-    proportions: { height: 1.05, headSize: 0.92, shoulderWidth: 1.15, chestWidth: 1.1, waistWidth: 0.95, neckLength: 1.05 },
-    muscles: { ...allMuscles(1.45), bodyFat: 0.12 },
+    proportions: { height: 1.05, headSize: 0.93 },
+    body: { muscle: 1, weight: 0.3, idealProportions: 1, definition: 0.8, shoulders: 0.5, chestWidth: 0.2 },
+    muscles: { deltoids: 0.6, chest: 0.5, lats: 0.4, vShape: 0.5, abs: 0.5, upperArms: 0.4, thighs: 0.3, calves: 0.3 },
   },
   Bodybuilder: {
-    proportions: { shoulderWidth: 1.12, chestWidth: 1.12, waistWidth: 1.02 },
-    muscles: { ...allMuscles(1.9), bodyFat: 0.08 },
+    body: { muscle: 1.12, weight: 0.4, idealProportions: 0.8, definition: 0.9, shoulders: 0.4, chestWidth: 0.3 },
+    muscles: { neck: 0.7, deltoids: 0.8, chest: 0.8, lats: 0.6, vShape: 0.5, abs: 0.6, upperArms: 0.8, forearms: 0.6, glutes: 0.3, thighs: 0.8, calves: 0.6 },
   },
-  Slim: {
-    proportions: { shoulderWidth: 0.95, chestWidth: 0.92, waistWidth: 0.9, hipWidth: 0.95 },
-    muscles: { ...allMuscles(0.55), bodyFat: 0.2 },
+  'Slim male': {
+    body: { muscle: 0.45, weight: 0.2, idealProportions: 0.5, definition: 0.4 },
+  },
+  'Average male': {
+    body: { muscle: 0.5, weight: 0.5, idealProportions: 0.3, definition: 0.2 },
   },
   'Athletic female': {
-    proportions: { height: 0.94, headSize: 0.97, shoulderWidth: 0.88, chestWidth: 0.88, waistWidth: 0.86, hipWidth: 1.12, neckLength: 1.05 },
-    muscles: { ...allMuscles(0.75), glutes: 1.15, bodyFat: 0.35, breasts: 0.9 },
+    proportions: { height: 0.95 },
+    body: { gender: 0, muscle: 0.7, weight: 0.35, idealProportions: 0.9, definition: 0.45, breastSize: 0.55 },
+    muscles: { abs: 0.3, glutes: 0.3, thighs: 0.2 },
   },
   'Curvy female': {
-    proportions: { height: 0.93, headSize: 0.97, shoulderWidth: 0.86, chestWidth: 0.9, waistWidth: 0.85, hipWidth: 1.22 },
-    muscles: { ...allMuscles(0.6), glutes: 1.4, quads: 0.8, bodyFat: 0.55, breasts: 1.4 },
+    proportions: { height: 0.94 },
+    body: { gender: 0, muscle: 0.45, weight: 0.65, idealProportions: 0.6, definition: 0.15, breastSize: 0.85, hips: 0.4 },
+    muscles: { glutes: 0.6, belly: -0.2 },
   },
   'Stylized (anime)': {
-    proportions: { height: 0.96, headSize: 1.12, neckLength: 1.1, shoulderWidth: 0.9, chestWidth: 0.88, waistWidth: 0.85, thigh_l: 1.06, thigh_r: 1.06, shin_l: 1.08, shin_r: 1.08 },
-    muscles: { ...allMuscles(0.65), bodyFat: 0.2 },
+    proportions: { height: 0.97, headSize: 1.1, neckLength: 1.1, thigh_l: 1.05, thigh_r: 1.05, shin_l: 1.08, shin_r: 1.08 },
+    body: { muscle: 0.55, weight: 0.3, idealProportions: 1, definition: 0.3 },
   },
   Heavy: {
-    proportions: { waistWidth: 1.3, chestWidth: 1.12, hipWidth: 1.12 },
-    muscles: { ...allMuscles(1.1), bodyFat: 1 },
+    body: { muscle: 0.5, weight: 1, idealProportions: 0.2, definition: 0 },
+    muscles: { belly: 0.6 },
   },
 };
 
@@ -166,5 +171,6 @@ export function applyPreset(params: FigureParams, name: string): void {
   const preset = PRESETS[name];
   if (!preset) return;
   Object.assign(params.proportions, DEFAULT_PROPORTIONS, preset.proportions);
+  Object.assign(params.body, DEFAULT_BODY, preset.body);
   Object.assign(params.muscles, DEFAULT_MUSCLES, preset.muscles);
 }

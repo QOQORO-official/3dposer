@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import GUI, { type Controller } from 'lil-gui';
 import type { Figure } from '../figure/rig';
-import { PRESETS, SIDES, applyPreset, type Muscles, type Proportions } from '../figure/params';
+import { PRESETS, SIDES, applyPreset, type BodyShape, type Muscles, type Proportions } from '../figure/params';
 import type { Viewport } from '../render/viewport';
 import type { RenderStyle } from '../render/style';
 
@@ -45,15 +45,23 @@ export interface GuiHandle {
   refreshAll(): void;
 }
 
+const BODY_LABELS: [keyof BodyShape, string, number, number][] = [
+  ['gender', 'Female ↔ Male', 0, 1],
+  ['muscle', 'Muscle', 0, 1.15],
+  ['definition', 'Definition', 0, 1],
+  ['weight', 'Weight / fat', 0, 1],
+  ['idealProportions', 'Idealized proportions', 0, 1],
+  ['breastSize', 'Breast size', 0, 1],
+  ['shoulders', 'Shoulder width', -1, 1],
+  ['chestWidth', 'Chest width', -1, 1],
+  ['hips', 'Hip width', -1, 1],
+];
+
 const PROPORTION_LABELS: [keyof Proportions, string, number, number][] = [
   ['height', 'Overall height', 0.6, 1.4],
   ['headSize', 'Head size', 0.7, 1.5],
   ['neckLength', 'Neck length', 0.5, 1.8],
   ['torsoLength', 'Torso length', 0.75, 1.3],
-  ['shoulderWidth', 'Shoulder width', 0.7, 1.4],
-  ['chestWidth', 'Chest width', 0.75, 1.4],
-  ['waistWidth', 'Waist width', 0.7, 1.5],
-  ['hipWidth', 'Hip width', 0.75, 1.4],
 ];
 
 const LIMB_LABELS: [string, string, number, number][] = [
@@ -65,23 +73,19 @@ const LIMB_LABELS: [string, string, number, number][] = [
   ['foot', 'Foot', 0.6, 1.5],
 ];
 
-const MUSCLE_LABELS: [keyof Muscles, string, number, number][] = [
-  ['neck', 'Neck', 0, 2],
-  ['traps', 'Trapezius', 0, 2],
-  ['deltoids', 'Deltoids', 0, 2],
-  ['chest', 'Pectorals', 0, 2],
-  ['lats', 'Lats / back', 0, 2],
-  ['abs', 'Abs', 0, 2],
-  ['obliques', 'Obliques', 0, 2],
-  ['biceps', 'Biceps', 0, 2],
-  ['triceps', 'Triceps', 0, 2],
-  ['forearms', 'Forearms', 0, 2],
-  ['glutes', 'Glutes', 0, 2],
-  ['quads', 'Quadriceps', 0, 2],
-  ['hamstrings', 'Hamstrings', 0, 2],
-  ['calves', 'Calves', 0, 2],
-  ['bodyFat', 'Body fat', 0, 1],
-  ['breasts', 'Breasts', 0, 2],
+const MUSCLE_LABELS: [keyof Muscles, string][] = [
+  ['neck', 'Neck'],
+  ['deltoids', 'Deltoids (shoulders)'],
+  ['chest', 'Pectorals'],
+  ['lats', 'Lats / back'],
+  ['vShape', 'V-taper'],
+  ['abs', 'Abs (tone)'],
+  ['belly', 'Belly'],
+  ['upperArms', 'Biceps / triceps'],
+  ['forearms', 'Forearms'],
+  ['glutes', 'Glutes'],
+  ['thighs', 'Thighs'],
+  ['calves', 'Calves'],
 ];
 
 export function buildGui(container: HTMLElement, ctx: GuiContext): GuiHandle {
@@ -176,6 +180,10 @@ export function buildGui(container: HTMLElement, ctx: GuiContext): GuiHandle {
       ctx.onShapeChange();
     });
 
+  for (const [key, label, min, max] of BODY_LABELS) {
+    bodyFolder.add(params.body, key, min, max, 0.01).name(label).onChange(ctx.onShapeChange);
+  }
+
   const propFolder = gui.addFolder('Proportions');
   for (const [key, label, min, max] of PROPORTION_LABELS) {
     propFolder.add(params.proportions, key, min, max, 0.01).name(label).onChange(ctx.onShapeChange);
@@ -201,8 +209,8 @@ export function buildGui(container: HTMLElement, ctx: GuiContext): GuiHandle {
   }
 
   const muscleFolder = gui.addFolder('Muscles');
-  for (const [key, label, min, max] of MUSCLE_LABELS) {
-    muscleFolder.add(params.muscles, key, min, max, 0.01).name(label).onChange(ctx.onShapeChange);
+  for (const [key, label] of MUSCLE_LABELS) {
+    muscleFolder.add(params.muscles, key, -1, 1, 0.01).name(label).onChange(ctx.onShapeChange);
   }
 
   // ---------- camera ----------
@@ -239,7 +247,7 @@ export function buildGui(container: HTMLElement, ctx: GuiContext): GuiHandle {
       viewport.setStyle(v);
       ctx.onStyleChange();
     });
-  renderFolder.add(ctx.settings, 'guides').name('Construction lines').onChange(ctx.onShapeChange);
+  renderFolder.add(ctx.settings, 'guides').name('Construction lines').onChange(ctx.onStyleChange);
   renderFolder.add(ctx.settings, 'outline', 0, 0.012, 0.0005).name('Line weight').onChange(ctx.onStyleChange);
   renderFolder.add(ctx.settings, 'halftone', 2, 12, 0.5).name('Screentone size').onChange(ctx.onStyleChange);
   renderFolder.add(viewport.grid, 'visible').name('Floor grid');
